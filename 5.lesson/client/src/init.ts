@@ -11,55 +11,55 @@ import {
     getProgramId,
 } from "./utils";
 
-const coin = async () => {
+const init = async () => {
     const connection = new Connection("http://localhost:8899", "confirmed");
     const turnstileProgramId = getProgramId();
-    const state = getKeypair("state");
     const initializer = getKeypair("initializer");
-    const user = getKeypair("user");
-    const [treasury, _bump] = await PublicKey.findProgramAddress([initializer.publicKey.toBuffer()], turnstileProgramId);
+    const state = getKeypair("state");
+    const [treasury, _bump] = await PublicKey.findProgramAddress([state.publicKey.toBuffer()], turnstileProgramId);
 
-    const coinStateIx = new TransactionInstruction({
+    const initStateIx = new TransactionInstruction({
         programId: turnstileProgramId,
         keys: [
             {
-                pubkey: state.publicKey, 
-                isSigner: false,
-                isWritable: true,
-            },
-            {
-                pubkey: treasury, 
-                isSigner: false,
-                isWritable: true,
-            },
-            {
-                pubkey: user.publicKey, 
+                pubkey: state.publicKey,
                 isSigner: true,
                 isWritable: true,
             },
             {
-                pubkey: SystemProgram.programId, 
+                pubkey: initializer.publicKey,
+                isSigner: true,
+                isWritable: true,
+            },
+            {
+                pubkey: treasury,
+                isSigner: false,
+                isWritable: true,
+            },
+            {
+                pubkey: SystemProgram.programId,
                 isSigner: false,
                 isWritable: false,
             },
         ],
         data: Buffer.from(
-            Uint8Array.of(2)    
+            Uint8Array.of(0, 1)
         ),
     });
 
     const tx = new Transaction().add(
-        coinStateIx
+        initStateIx
     );
 
-    console.log("Sending coin transaction.");
+    console.log("Sending init transaction.");
     await connection.sendTransaction(
         tx,
-        [user],
+        [initializer, state],
         { skipPreflight: false, preflightCommitment: "confirmed" }
     );
+    console.log("Treasury address: ", treasury.toBase58().toString());
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
-coin();
+init();

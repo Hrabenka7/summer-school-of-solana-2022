@@ -1,12 +1,14 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
+    borsh::try_from_slice_unchecked,
     entrypoint::ProgramResult,
+    native_token::sol_to_lamports,
     program::{invoke, invoke_signed},
     pubkey::Pubkey,
     rent::Rent,
     system_instruction, system_program,
-    sysvar::Sysvar, native_token::sol_to_lamports,
+    sysvar::Sysvar,
 };
 
 use crate::{instruction::TurnstileInstruction, state::State};
@@ -37,8 +39,9 @@ pub fn initialize(
     let initialezer_account_info = next_account_info(account_into_iter)?;
     let treasury_account_info = next_account_info(account_into_iter)?;
 
+    //swap treasury account
     let (treasury, bump) =
-        Pubkey::find_program_address(&[initialezer_account_info.key.as_ref()], program_id);
+        Pubkey::find_program_address(&[state_account_info.key.as_ref()], program_id);
 
     assert_eq!(treasury, *treasury_account_info.key);
 
@@ -54,7 +57,11 @@ pub fn initialize(
         &[initialezer_account_info.clone(), state_account_info.clone()],
     )?;
 
-    let state = State { locked: init_state };
+    let state = State {
+        locked: init_state,
+        payer: Pubkey::default(),
+    };
+
     state.serialize(&mut *state_account_info.data.borrow_mut())?;
 
     invoke_signed(
@@ -69,30 +76,42 @@ pub fn initialize(
             initialezer_account_info.clone(),
             treasury_account_info.clone(),
         ],
-        &[&[initialezer_account_info.key.as_ref(), &[bump]]],
+        &[&[state_account_info.key.as_ref(), &[bump]]],
     )?;
 
     Ok(())
 }
 
-pub fn coin(_program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+pub fn coin(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_into_iter = &mut accounts.iter();
     let state_account_info = next_account_info(account_into_iter)?;
     let treasury_account_info = next_account_info(account_into_iter)?;
     let user_account_info = next_account_info(account_into_iter)?;
 
     assert_eq!(user_account_info.is_signer, true);
-    
+
+    //check treasury account
+    let (treasury, _bump) =
+        Pubkey::find_program_address(&[state_account_info.key.as_ref()], program_id);
+
+    let state = State::try_from_slice(&state_account_info.data.borrow())?;
+
+    assert_eq!(state.locked, false);
+    assert_eq!(treasury, *treasury_account_info.key);
+
     invoke(
         &system_instruction::transfer(
             &user_account_info.key,
             &treasury_account_info.key,
-            sol_to_lamports(1.0)
+            sol_to_lamports(1.0),
         ),
         &[user_account_info.clone(), treasury_account_info.clone()],
     )?;
 
-    let state = State { locked: false };
+    let state = State {
+        locked: false,
+        payer: *user_account_info.key,
+    };
     state.serialize(&mut *state_account_info.data.borrow_mut())?;
 
     Ok(())
@@ -101,8 +120,17 @@ pub fn coin(_program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
 pub fn push(_program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_into_iter = &mut accounts.iter();
     let state_account_info = next_account_info(account_into_iter)?;
+    let user_account_info = next_account_info(account_into_iter)?;
 
-    let state = State { locked: true };
+    let state = State::try_from_slice(&state_account_info.data.borrow())?;
+
+    assert_eq!(user_account_info.is_signer, true);
+    assert_eq!(state.payer, *user_account_info.key);
+
+    let state = State {
+        locked: true,
+        payer: Pubkey::default(),
+    };
     state.serialize(&mut *state_account_info.data.borrow_mut())?;
 
     Ok(())
