@@ -7,6 +7,8 @@ describe("turnstile", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
 
   const program = anchor.workspace.Turnstile as Program<Turnstile>;
+  const state = anchor.web3.Keypair.generate();
+  const user = (program.provider as anchor.AnchorProvider).wallet;
 
   it("Is initialized!", async () => {
     // Add your test here.
